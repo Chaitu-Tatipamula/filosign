@@ -12,6 +12,10 @@ import { MOCK_USERS, MockUser, mockStorage } from '@/lib/mock-storage';
 import { useUploadLocal } from '@/lib/hooks/use-upload-local';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { WalletConnection } from '@/components/wallet-connection';
+import { useUploadSynapse } from '@/lib/hooks/use-upload-synapse';
+import { ethers } from 'ethers';
+import { PandoraService } from '@filoz/synapse-sdk/pandora';
+import { CONTRACT_ADDRESSES, RPC_URLS } from '@filoz/synapse-sdk';
 
 // Using local storage for MVP
 
@@ -28,6 +32,7 @@ export default function SendDocument() {
   const [copied, setCopied] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isMounted, setIsMounted] = useState(false);
+  const [storageCost, setStorageCost] = useState<string | null>(null);
 
   // Local storage upload state
   const {
@@ -39,6 +44,12 @@ export default function SendDocument() {
     // walletAddress,
     startUpload
   } = useUploadLocal();
+
+  // Synapse upload state
+  const { upload, status: synapseStatus, progress: synapseProgress, result: synapseResult, error: synapseError } = useUploadSynapse();
+
+  // Add state to toggle between local and Synapse
+  const [useSynapse, setUseSynapse] = useState(false);
 
   const handleWalletConnected = (walletAddress: string, publicKey: string) => {
     setUserPublicKey(publicKey);
@@ -71,6 +82,29 @@ export default function SendDocument() {
       setIsUploading(true);
     }
   }, [phase, result, uploadError]);
+
+  // Calculate storage cost when file is selected
+  useEffect(() => {
+    const fetchStorageCost = async () => {
+      if (!selectedFile || !isConnected) {
+        setStorageCost(null);
+        return;
+      }
+      try {
+        // Get provider from ethers
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        // Use calibration network Pandora address
+        const pandoraAddress = CONTRACT_ADDRESSES.PANDORA_SERVICE['calibration'];
+        const pandoraService = new PandoraService(provider, pandoraAddress);
+        const costs = await pandoraService.calculateStorageCost(selectedFile.size);
+        const formattedCost = ethers.formatUnits(costs.perMonth, 18); // 18 decimals for USDFC
+        setStorageCost(formattedCost);
+      } catch (e) {
+        setStorageCost(null);
+      }
+    };
+    fetchStorageCost();
+  }, [selectedFile, isConnected]);
 
   // Prevent hydration mismatch by not rendering until mounted
   if (!isMounted) {
@@ -134,34 +168,12 @@ export default function SendDocument() {
       setErrorMessage('Please fill in all fields and connect your wallet');
       return;
     }
-
     setErrorMessage(null);
     setIsUploading(true);
-
     try {
-      // Simple mock storage without encryption for MVP
-      // Convert file to base64
-      const fileData = await new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.readAsDataURL(selectedFile);
-      });
-
-      // Save document with simple storage (no encryption for now)
-      const document = mockStorage.saveDocument({
-        title: selectedFile.name,
-        fileName: selectedFile.name,
-        fileData: fileData, // Store directly without encryption
-        senderAddress: address,
-        senderName: 'Current User',
-        recipientAddress,
-        recipientName,
-      });
-
-      setRetrievalId(document.retrievalId);
+      await upload(selectedFile);
       setIsUploading(false);
     } catch (error) {
-      console.error('Error uploading document:', error);
       setErrorMessage(error instanceof Error ? error.message : 'Error uploading document. Please try again.');
       setIsUploading(false);
     }
@@ -287,6 +299,12 @@ export default function SendDocument() {
                       </div>
                     </div>
                   )}
+                  {/* Show storage cost if available */}
+                  {selectedFile && storageCost && (
+                    <div className="mt-2 text-sm text-blue-600">
+                      Storage cost: {storageCost} USDFC per month
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -354,7 +372,7 @@ export default function SendDocument() {
               <CardContent className="pt-6">
                 <Button
                   onClick={handleSignAndSecure}
-                  disabled={!selectedFile || !recipientAddress || !recipientName || isUploading || !isConnected}
+                  disabled={!selectedFile || !recipientAddress || !recipientName || !isConnected || isUploading}
                   className="w-full"
                   variant="success"
                   size="lg"
@@ -362,7 +380,7 @@ export default function SendDocument() {
                   {isUploading ? (
                     <>
                       <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                      {getUploadStatusText()}
+                      {synapseStatus === 'Uploading...' ? `Uploading to Synapse... ${synapseProgress}%` : synapseStatus}
                     </>
                   ) : (
                     <>
@@ -371,18 +389,30 @@ export default function SendDocument() {
                     </>
                   )}
                 </Button>
-
-                {phase !== 'idle' && phase !== 'error' && phase !== 'complete' && (
+                {/* Progress bar for Synapse */}
+                {synapseStatus === 'Uploading...' && (
                   <div className="mt-4">
                     <div className="w-full bg-gray-200 rounded-full h-2.5 dark:bg-gray-700">
                       <div
                         className="bg-primary h-2.5 rounded-full"
-                        style={{ width: `${progress}%` }}
+                        style={{ width: `${synapseProgress}%` }}
                       ></div>
                     </div>
                     <p className="text-xs text-center mt-1 text-muted-foreground">
-                      {progress}% - {phase}
+                      {synapseProgress}% - {synapseStatus}
                     </p>
+                  </div>
+                )}
+                {/* Show uploaded info if available */}
+                {synapseResult && (
+                  <div className="mt-4 text-center text-green-600">
+                    <div>Upload complete!</div>
+                    <div>CommP: {synapseResult.commp}</div>
+                  </div>
+                )}
+                {synapseError && (
+                  <div className="mt-4 text-center text-red-600">
+                    <div>Error: {synapseError}</div>
                   </div>
                 )}
               </CardContent>
