@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "buildCommand": "cd filosign-app && npm run build",
-  "outputDirectory": "filosign-app/.next",
-  "installCommand": "cd filosign-app && npm install --legacy-peer-deps",
+  "buildCommand": "npm run build",
+  "outputDirectory": ".next",
+  "installCommand": "npm install --legacy-peer-deps",
   "framework": "nextjs",
   "github": {
     "silent": true,
