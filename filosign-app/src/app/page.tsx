@@ -251,26 +251,20 @@ export default function Home() {
 
 // Signed Documents Section Component
 function SignedDocumentsSection({ userAddress }: { userAddress: string | undefined }) {
-  const [documents, setDocuments] = useState<StorageMetadata[]>([]);
-
-  const loadUserDocuments = useCallback(async () => {
-    if (!userAddress) return;
-    try {
-      const userDocs = await localStorageService.getDocumentsForUser(userAddress);
-      setDocuments(userDocs);
-    } catch (error) {
-      console.error('Failed to load documents:', error);
-    }
-  }, [userAddress]);
+  const [documents, setDocuments] = useState<any[]>([]);
 
   useEffect(() => {
-    if (userAddress) {
-      loadUserDocuments();
-    }
-  }, [userAddress, loadUserDocuments]);
+    if (!userAddress) return;
+    fetch(`/api/documents/signed?userAddress=${userAddress}`)
+      .then(res => res.json())
+      .then(setDocuments)
+      .catch(console.error);
+  }, [userAddress]);
 
-  const sentDocs = documents.filter(doc => doc.sender_address.toLowerCase() === userAddress?.toLowerCase());
-  const receivedDocs = documents.filter(doc => doc.recipient_address.toLowerCase() === userAddress?.toLowerCase());
+  if (!userAddress) return null;
+
+  const sentDocs = documents.filter(doc => doc.senderAddress.address === userAddress);
+  const receivedDocs = documents.filter(doc => doc.recipientAddress === userAddress);
 
   return (
     <div className="mt-8 space-y-6">
@@ -294,24 +288,24 @@ function SignedDocumentsSection({ userAddress }: { userAddress: string | undefin
               <h4 className="text-lg font-medium mb-3">Documents Sent</h4>
               <div className="space-y-2">
                 {sentDocs.map((doc) => (
-                  <Card key={doc.retrieval_id} className="cursor-pointer hover:shadow-lg hover:scale-[1.01] transition-all duration-200 group">
+                  <Card key={doc.retrievalId} className="cursor-pointer hover:shadow-lg hover:scale-[1.01] transition-all duration-200 group">
                     <CardContent className="p-4">
                       <div className="flex justify-between items-start">
                         <div className="flex-1">
                           <div className="flex items-center space-x-2">
-                            <span className="font-medium group-hover:text-primary transition-colors duration-200">{doc.retrieval_id}</span>
+                            <span className="font-medium group-hover:text-primary transition-colors duration-200">{doc.retrievalId}</span>
                             <span className="px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800 group-hover:bg-blue-200 transition-colors duration-200">
-                              Encrypted
+                              Signed
                             </span>
                           </div>
                           <p className="text-sm text-muted-foreground mt-1">
-                            To: {doc.recipient_address.substring(0, 6)}...{doc.recipient_address.substring(38)}
+                            To: {doc.recipientAddress}
                           </p>
                           <p className="text-sm text-muted-foreground">
-                            Sent: {new Date(doc.upload_timestamp).toLocaleDateString()} {new Date(doc.upload_timestamp).toLocaleTimeString()}
+                            Signed: {doc.signedAt ? new Date(doc.signedAt).toLocaleDateString() : 'N/A'} {doc.signedAt ? new Date(doc.signedAt).toLocaleTimeString() : ''}
                           </p>
                           <p className="text-sm text-muted-foreground">
-                            Size: {(doc.file_size / 1024).toFixed(1)} KB
+                            File: {doc.filename}
                           </p>
                         </div>
                         <div className="text-right">
@@ -331,24 +325,27 @@ function SignedDocumentsSection({ userAddress }: { userAddress: string | undefin
               <h4 className="text-lg font-medium mb-3">Documents Received</h4>
               <div className="space-y-2">
                 {receivedDocs.map((doc) => (
-                  <Card key={doc.retrieval_id} className="cursor-pointer hover:shadow-lg hover:scale-[1.01] transition-all duration-200 group">
+                  <Card key={doc.retrievalId} className="cursor-pointer hover:shadow-lg hover:scale-[1.01] transition-all duration-200 group">
                     <CardContent className="p-4">
                       <div className="flex justify-between items-start">
                         <div className="flex-1">
                           <div className="flex items-center space-x-2">
-                            <span className="font-medium group-hover:text-primary transition-colors duration-200">{doc.retrieval_id}</span>
+                            <span className="font-medium group-hover:text-primary transition-colors duration-200">{doc.retrievalId}</span>
                             <span className="px-2 py-1 rounded-full text-xs bg-green-100 text-green-800 group-hover:bg-green-200 transition-colors duration-200">
-                              Available
+                              Signed
                             </span>
                           </div>
                           <p className="text-sm text-muted-foreground mt-1">
-                            From: {doc.sender_address.substring(0, 6)}...{doc.sender_address.substring(38)}
+                            CommP: {doc.commp}
+                          </p>
+                          <p className="text-sm text-muted-foreground mt-1">
+                            From: {doc.senderAddress.address}
                           </p>
                           <p className="text-sm text-muted-foreground">
-                            Received: {new Date(doc.upload_timestamp).toLocaleDateString()} {new Date(doc.upload_timestamp).toLocaleTimeString()}
+                            Signed: {doc.signedAt ? new Date(doc.signedAt).toLocaleDateString() : 'N/A'} {doc.signedAt ? new Date(doc.signedAt).toLocaleTimeString() : ''}
                           </p>
                           <p className="text-sm text-muted-foreground">
-                            Size: {(doc.file_size / 1024).toFixed(1)} KB
+                            File: {doc.filename}
                           </p>
                         </div>
                         <div className="text-right">

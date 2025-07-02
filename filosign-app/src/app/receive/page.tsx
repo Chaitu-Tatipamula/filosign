@@ -8,14 +8,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ArrowLeft, Search, FileText, Shield, Check, AlertCircle } from 'lucide-react';
-import { mockStorage, Document } from '@/lib/mock-storage';
 import { WalletConnection } from '@/components/wallet-connection';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
+import { useRetrieveSynapse } from '@/lib/hooks/use-retrieve-synapse';
 
-// Extended document interface for receive page
-interface DocumentWithDecryption extends Document {
-  decryptedFileData?: string;
-}
+type SynapseDocument = {
+  file: File;
+  metadata: any;
+  retrievalId: string;
+};
 
 export default function ReceiveDocument() {
   const router = useRouter();
@@ -24,11 +25,20 @@ export default function ReceiveDocument() {
   const [userPublicKey, setUserPublicKey] = useState<string | null>(null);
   const [retrievalId, setRetrievalId] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [document, setDocument] = useState<DocumentWithDecryption | null>(null);
+  const [document, setDocument] = useState<SynapseDocument | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSigning, setIsSigning] = useState(false);
   const [signed, setSigned] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
+
+  const {
+    retrieveDocument,
+    signDocument,
+    phase,
+    progress,
+    document: synapseDocument,
+    error: synapseError
+  } = useRetrieveSynapse();
 
   const handleWalletConnected = (walletAddress: string, publicKey: string) => {
     setUserPublicKey(publicKey);
@@ -54,85 +64,49 @@ export default function ReceiveDocument() {
       setError('Please enter a Retrieval ID');
       return;
     }
-
     if (!address) {
       setError('Please connect your wallet first');
       return;
     }
-
     setIsLoading(true);
     setError(null);
-
     try {
-      // Simulate network delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      const doc = mockStorage.getDocumentByRetrievalId(retrievalId.trim());
-
-      if (!doc) {
-        setError('Invalid Retrieval ID. Please check and try again.');
-        return;
-      }
-
-      // Check if user can access this document (sender or recipient)
-      const accessCheck = mockStorage.canUserAccessDocument(doc, address);
-
-      console.log('Access verification:', {
+      await retrieveDocument({
+        retrievalId: retrievalId.trim(),
         userAddress: address,
-        senderAddress: doc.senderAddress,
-        recipientAddress: doc.recipientAddress,
-        canAccess: accessCheck.canAccess,
-        role: accessCheck.role,
-        reason: accessCheck.reason
-      });
-
-      if (!accessCheck.canAccess) {
-        if (accessCheck.role === 'none') {
-          setError(`Access denied. This document is for sender ${doc.senderAddress} or recipient ${doc.recipientAddress}. Please use the correct wallet.`);
-        } else {
-          setError(`Access denied: ${accessCheck.reason || 'Unknown error'}`);
+        onComplete: (doc) => {
+          setDocument(doc);
+          setIsLoading(false);
+        },
+        onError: (err) => {
+          setError(err);
+          setIsLoading(false);
         }
-        return;
-      }
-
-      // For MVP, documents are stored without encryption
-      // Just set the document directly
-      setDocument(doc);
-
+      });
     } catch (error) {
-      console.error('Error retrieving document:', error);
       setError('Network error occurred. Please try again.');
-    } finally {
       setIsLoading(false);
     }
   };
 
   const handleSignDocument = async () => {
     if (!document || !address) return;
-
     setIsSigning(true);
-
     try {
-      // Simulate MetaMask signature
-      await new Promise(resolve => setTimeout(resolve, 2000));
-
-      // Sign the document
-      const success = mockStorage.signDocument(document.retrievalId, address);
-
-      if (success) {
-        setSigned(true);
-        // Refresh document to show updated status
-        const updatedDoc = mockStorage.getDocumentByRetrievalId(document.retrievalId);
-        if (updatedDoc) {
-          setDocument(updatedDoc);
+      await signDocument({
+        retrievalId: document.retrievalId,
+        userAddress: address,
+        onComplete: () => {
+          setSigned(true);
+          setIsSigning(false);
+        },
+        onError: (err) => {
+          setError(err);
+          setIsSigning(false);
         }
-      } else {
-        setError('Failed to sign document. Please try again.');
-      }
+      });
     } catch (error) {
-      console.error('Error signing document:', error);
       setError('Signing failed. Please try again.');
-    } finally {
       setIsSigning(false);
     }
   };
@@ -304,25 +278,25 @@ export default function ReceiveDocument() {
               <CardHeader>
                 <CardTitle className="flex items-center space-x-2">
                   <FileText className="h-5 w-5" />
-                  <span>{document.title}</span>
+                  <span>{document.metadata.title}</span>
                 </CardTitle>
                 <CardDescription>
-                  From: {document.senderName} ({document.senderAddress})
+                  From: {document.metadata.senderName} ({document.metadata.senderAddress.address})
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div>
-                    <span className="font-medium">Sent:</span> {new Date(document.createdAt).toLocaleString()}
+                    <span className="font-medium">Sent:</span> {new Date(document.metadata.createdAt).toLocaleString()}
                   </div>
                   <div>
                     <span className="font-medium">Status:</span> 
                     <span className={`ml-2 px-2 py-1 rounded-full text-xs ${
-                      document.status === 'signed' 
+                      document.metadata.status === 'signed' 
                         ? 'bg-green-100 text-green-800' 
                         : 'bg-yellow-100 text-yellow-800'
                     }`}>
-                      {document.status === 'signed' ? 'Signed' : 'Pending Signature'}
+                      {document.metadata.status === 'signed' ? 'Signed' : 'Pending Signature'}
                     </span>
                   </div>
                 </div>
@@ -340,7 +314,7 @@ export default function ReceiveDocument() {
               <CardContent>
                 <div className="border-2 border-dashed border-gray-300 rounded-lg p-12 text-center bg-gray-50">
                   <FileText className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-                  <p className="text-lg font-medium text-gray-600">{document.fileName}</p>
+                  <p className="text-lg font-medium text-gray-600">{document.metadata.filename}</p>
                   <p className="text-sm text-gray-500 mt-2">
                     PDF preview would be displayed here using PDF.js
                   </p>
@@ -352,7 +326,7 @@ export default function ReceiveDocument() {
             </Card>
 
             {/* Sign Document */}
-            {document.status !== 'signed' && !signed ? (
+            {document.metadata.status !== 'signed' && !signed ? (
               <Card>
                 <CardContent className="pt-6">
                   <div className="text-center space-y-4">
@@ -397,9 +371,9 @@ export default function ReceiveDocument() {
                     <p className="text-muted-foreground">
                       Your signature has been recorded on the blockchain.
                     </p>
-                    {document.signedAt && (
+                    {document.metadata.signedAt && (
                       <p className="text-sm text-gray-600">
-                        Signed on: {new Date(document.signedAt).toLocaleString()}
+                        Signed on: {new Date(document.metadata.signedAt).toLocaleString()}
                       </p>
                     )}
                     <Button onClick={() => router.push('/')} variant="outline">

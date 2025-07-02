@@ -46,10 +46,10 @@ export default function SendDocument() {
   } = useUploadLocal();
 
   // Synapse upload state
-  const { upload, status: synapseStatus, progress: synapseProgress, result: synapseResult, error: synapseError } = useUploadSynapse();
+  const { upload, phase: synapsePhase, progress: synapseProgress, result: synapseResult, error: synapseError } = useUploadSynapse();
 
   // Add state to toggle between local and Synapse
-  const [useSynapse, setUseSynapse] = useState(false);
+  const [useSynapse, setUseSynapse] = useState(true); // Default to Synapse now
 
   const handleWalletConnected = (walletAddress: string, publicKey: string) => {
     setUserPublicKey(publicKey);
@@ -171,8 +171,28 @@ export default function SendDocument() {
     setErrorMessage(null);
     setIsUploading(true);
     try {
-      await upload(selectedFile);
+      await upload(selectedFile, {
+        recipientAddress,
+        recipientName,
+        metadata: {
+          filename: selectedFile.name,
+          description: 'Document for signing'
+        },
+        onProgress: (progress) => {
+          // Progress is handled by the hook
+        },
+        onPhaseChange: (phase) => {
+          // Phase changes are handled by the hook
+        },
+        onComplete: (result) => {
+          setRetrievalId(result.retrievalId);
+          setIsUploading(false);
+        },
+        onError: (error) => {
+          setErrorMessage(error);
       setIsUploading(false);
+        }
+      });
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Error uploading document. Please try again.');
       setIsUploading(false);
@@ -244,7 +264,7 @@ export default function SendDocument() {
                 Upload a document and specify a recipient to generate a secure retrieval ID
               </p>
               <div className="mt-2 text-sm font-medium text-primary">
-                Using Local Storage (MVP)
+                Using Synapse SDK (Filecoin Storage)
               </div>
             </div>
 
@@ -380,7 +400,7 @@ export default function SendDocument() {
                   {isUploading ? (
                     <>
                       <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                      {synapseStatus === 'Uploading...' ? `Uploading to Synapse... ${synapseProgress}%` : synapseStatus}
+                      {synapsePhase === 'uploading' ? `Uploading to Synapse... ${synapseProgress}%` : synapsePhase}
                     </>
                   ) : (
                     <>
@@ -390,7 +410,7 @@ export default function SendDocument() {
                   )}
                 </Button>
                 {/* Progress bar for Synapse */}
-                {synapseStatus === 'Uploading...' && (
+                {synapsePhase === 'uploading' && (
                   <div className="mt-4">
                     <div className="w-full bg-gray-200 rounded-full h-2.5 dark:bg-gray-700">
                       <div
@@ -399,7 +419,7 @@ export default function SendDocument() {
                       ></div>
                     </div>
                     <p className="text-xs text-center mt-1 text-muted-foreground">
-                      {synapseProgress}% - {synapseStatus}
+                      {synapseProgress}% - {synapsePhase}
                     </p>
                   </div>
                 )}
@@ -437,7 +457,7 @@ export default function SendDocument() {
                   <span className="alert-title">Document ID:</span> {retrievalId}
                 </p>
                 <p className="alert-description">
-                  <span className="alert-title">Storage:</span> Local Storage (MVP)
+                  <span className="alert-title">Storage:</span> Synapse SDK (Filecoin)
                 </p>
                 <p className="alert-description">
                   <span className="alert-title">Status:</span> Ready for Signing
